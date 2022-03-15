@@ -2,7 +2,7 @@
 > SAP BTP Multitent
 
 # To Create a extend App:
-- cds extend <route-url-from-the-consumer>/extend -s <space> -d <folter> 
+- `cds extend <route-url-from-the-consumer>/extend -s <space> -d <folter>`
   - route-url-from-the-consumer --> `cds extend https://b749bb60trial-qa-multitenant-btp-srv.cfapps.us10.hana.ondemand.com/extend -s b749bb60trial -d b749bb60trial`
 - Fetching the passcode to access the consumer `https://b749bb60trial.authentication.cfapps.us10.hana.ondemand.com/passcode`
 - Activating extensions --> `cds activate <folter> -s <space>`
