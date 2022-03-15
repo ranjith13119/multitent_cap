@@ -1,0 +1,156 @@
+_schema-version: '3.2'
+ID: multitent_cap_depentency
+version: 0.0.1
+
+parameters:
+  enable-parallel-deployments: true
+
+build-parameters:
+  before-all:
+    - builder: custom
+      commands:
+        - npm install --production
+        - npx -p @sap/cds-dk cds build --production
+#        - npx rimraf gen/db/src/gen/data # uncomment this line to prevent loading of initial data which is only relevant for dev/test deployments 
+#        - npx rimraf gen/db/src/gen/csv  # uncomment this line unless db/csv folder has been used for config/control table data which is entirely managed by the developer and never changed by the app
+
+modules:
+
+  # --------------------- SERVER MODULE ------------------------
+  - name: multitent_cap_depentency-srv
+  # ------------------------------------------------------------
+    type: nodejs
+    path: gen/srv
+    parameters:
+      buildpack: nodejs_buildpack
+      memory: 512M
+      disk-quota: 1024M
+    properties:
+      ApplicationInterfaceKey: saptest0
+      APIKeyHubSandbox: Ejq7jB2i2ymKyx83OGOdZmVxQQpsV2kl
+    requires:
+      - name: multitent_cap_depentency-uaa
+      - name: multitent_cap_depentency-dest
+      - name: multitent_cap_depentency-registry
+      - name: multitent_cap_depentency-sm
+    provides:
+      - name: srv-api
+        properties:
+          srv-url: ${default-url}
+
+
+
+  # ------------------ APP ROUTER MODULE -----------------------
+  - name: multitent_cap_depentency
+  # ------------------------------------------------------------
+    type: approuter.nodejs
+    path: app
+    parameters:
+      memory: 256M
+      disk-quota: 1024M
+      keep-existing-routes: true
+    properties:
+      TENANT_HOST_PATTERN: '^(.*)-${space}-${app-name}.${default-domain}'
+    requires:
+      - name: multitent_cap_depentency-uaa
+      - name: srv-api
+        group: destinations
+        properties:
+          name: srv
+          url: ~{srv-url}
+          timeout: 60000
+          forwardAuthToken: true
+    provides:
+      - name: app_api
+        properties:
+          url: ${default-url}
+          application: ${app-name}
+
+
+resources:
+  # ----------------------- UAA SERVICE ------------------------
+  - name: multitent_cap_depentency-uaa
+  # ------------------------------------------------------------
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: xsuaa
+      service-plan: application
+      path: ./xs-security.json
+      xsuaa-app: ${space}-~{app_api/application}
+      config:
+        xsappname: ${xsuaa-app}
+    properties:
+      XSAPPNAME: ${xsuaa-app}
+    requires: 
+      - name: app_api
+
+  # -------------------- DESTINATION SERVICE -------------------
+  - name: multitent_cap_depentency-dest
+  # ------------------------------------------------------------
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: destination
+      service-plan: lite
+      config:
+        init_data:
+          instance:
+            existing_destinations_policy: ignore
+            destinations:
+              - Name: multitent_cap_depentency-cfapi
+                Description: CF Cloud Controller API
+                URL: ${controller-url}
+                Type: HTTP
+                ProxyType: Internet
+                Authentication: OAuth2Password
+                tokenServiceURL: ${authorization-url}/oauth/token
+                clientId: cf
+                clientSecret:
+                User: <SetValueInCockpit>
+                Password: <SetValueInCockpit>
+              - Name: multitent_cap_depentency-API_SALES_ORDER_SRV
+                Description: SAP S/4HANA Cloud Sales Order (A2X)
+                URL: https://sandbox.api.sap.com
+                Type: HTTP
+                ProxyType: Internet
+                Authentication: NoAuthentication
+                HTML5.DynamicDestination: true
+
+
+
+
+
+
+  # --------------------- REGISTRY SERVICE ---------------------
+  - name: multitent_cap_depentency-registry
+  # ------------------------------------------------------------
+    type: org.cloudfoundry.managed-service
+    requires:
+      - name: multitent_cap_depentency-uaa
+    parameters:
+      service: saas-registry
+      service-plan: application
+      config:
+        xsappname: ~{multitent_cap_depentency-uaa/XSAPPNAME}
+        appName: multitent_cap_depentency
+        displayName: 'multitenant_cap_btp'
+        description: 'Business Application'
+        category: 'SaaS Multitenant Apps'
+        appUrls:
+          onSubscription: https://${org}-${space}-multitent_cap_depentency-srv.${default-domain}/mtx/v1/provisioning/tenant/{tenantId}
+          getDependencies: https://${org}-${space}-multitent_cap_depentency-srv.${default-domain}/mtx/v1/provisioning/dependencies
+
+  # ------------------- SERVICE MANAGER SERVICE ----------------
+  - name: multitent_cap_depentency-sm
+  # ------------------------------------------------------------
+    type: org.cloudfoundry.managed-service
+    requires:
+     - name: multitent_cap_depentency-uaa
+    parameters:
+       service: service-manager
+       service-plan: container
+       polling_timeout_seconds: 240
+       config:
+         acquireTimeoutMillis: max
+         polling_timeout_seconds: 480
+
+
